@@ -1,0 +1,60 @@
+name: Hourly Update
+
+on: 
+  schedule:
+    - cron: "0 * * * *"
+  repository_dispatch:
+    types: manual
+  workflow_dispatch:
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout our repository
+        uses: actions/checkout@v3
+      - name: Remove old wp files
+        shell: bash
+        run: |
+          find . -maxdepth 1 -name wp-\* -exec rm -fr {} \;
+          rm index.php license.txt readme.html xmlrpc.php
+      - name: Checkout their repository
+        uses: actions/checkout@v3
+        with:
+          repository: 'WordPress/WordPress'
+          path: src
+          fetch-depth: 0
+      - name: Get latest tag
+        shell: bash
+        run: |
+          echo "LATESTTAG=$(git -C ./src tag | grep [0-9].* | tail -n 1)" >> $GITHUB_ENV
+          git -C ./src tag | grep [0-9].* | tail -n 1
+      - name: Switch Tag
+        shell: bash
+        run: |
+          git -C ./src checkout tags/${{ env.LATESTTAG }}
+      - name: copy new files
+        shell: bash
+        run: |
+          rsync -avzh --exclude '.git/*' ./src/ .
+      - name: delete src folder
+        shell: bash
+        run: |
+          rm -fr ./src
+      - name: Commit changes
+        shell: bash
+        run: |
+          git config http.sslVerify false
+          git config user.name "Automated Push"
+          git config user.email "actions@users.noreply.github.com"
+          git status
+          git add -A
+          git commit -m "WordPress Tag: ${{ env.LATESTTAG }}" || exit 0
+          git tag ${{ env.LATESTTAG }}
+      - name: Push changes
+        shell: bash
+        run: |
+          REMOTE_REPO="https://${GITHUB_ACTOR}:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git push --tags "${REMOTE_REPO}" HEAD:main
